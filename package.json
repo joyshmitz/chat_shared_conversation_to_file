@@ -1,0 +1,26 @@
+{
+  "name": "chatgpt-shared-conversation-to-markdown-file",
+  "version": "0.1.0",
+  "description": "CLI to download a ChatGPT share link and save it as clean Markdown.",
+  "license": "MIT",
+  "bin": {
+    "csctm": "./dist/csctm"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --compile --outfile dist/csctm --external electron --external chromium-bidi/lib/cjs/bidiMapper/BidiMapper --external chromium-bidi/lib/cjs/cdp/CdpConnection",
+    "dev": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "playwright-chromium": "^1.46.1",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/turndown": "^5.0.6",
+    "eslint": "^9.39.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.1"
+  }
+}
