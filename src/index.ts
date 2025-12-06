@@ -78,6 +78,7 @@ type CliOptions = {
   forgetGh: boolean
   dryRun: boolean
   yes: boolean
+  publishGhPages: boolean
   ghPagesRepo?: string
   ghPagesBranch: string
   ghPagesDir: string
@@ -740,6 +741,7 @@ function parseArgs(args: string[]): ParsedArgs {
   let forgetGh = false
   let dryRun = false
   let yes = false
+  let publishGhPages = false
   let ghPagesRepo: string | undefined
   let ghPagesBranch = 'gh-pages'
   let ghPagesDir = 'csctf'
@@ -842,6 +844,9 @@ function parseArgs(args: string[]): ParsedArgs {
       case '--no-confirm':
         yes = true
         break
+      case '--publish-to-gh-pages':
+        publishGhPages = true
+        break
       case '--gh-pages-repo':
         if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
           ghPagesRepo = args[i + 1]
@@ -905,6 +910,7 @@ function parseArgs(args: string[]): ParsedArgs {
     forgetGh,
     dryRun,
     yes,
+    publishGhPages,
     ghPagesRepo,
     ghPagesBranch,
     ghPagesDir,
@@ -966,7 +972,7 @@ function usage(): void {
       `  [--headful|--headless]`,
       `  [--open] [--copy] [--json] [--title "Custom Title"] [--wait-for-selector "<css>"] [--debug]`,
       `  [--check-updates|--no-check-updates] [--version] [--no-html] [--html-only] [--md-only]`,
-      `  [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir dir]`,
+      `  [--publish-to-gh-pages] [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir dir]`,
       `  [--remember] [--forget-gh-pages] [--dry-run] [--yes] [--help] [--gh-install]`,
       '',
       'Common recipes:',
@@ -976,8 +982,9 @@ function usage(): void {
       `  HTML only:                csctf <url> --html-only`,
       `  Markdown only:            csctf <url> --md-only`,
       `  Longer timeout:           csctf <url> --timeout-ms 90000`,
-      `  Publish (public):         GITHUB_TOKEN=... csctf <url> --gh-pages-repo owner/name --yes`,
-      `  Remember GH settings:     csctf <url> --gh-pages-repo owner/name --remember --yes`,
+      `  Publish (simple):         csctf <url> --publish-to-gh-pages --yes`,
+      `  Publish (custom repo):    csctf <url> --gh-pages-repo owner/name --yes`,
+      `  Remember GH settings:     csctf <url> --publish-to-gh-pages --remember --yes`,
       ''
     ].join('\n')
   )
@@ -2146,6 +2153,7 @@ async function main(): Promise<void> {
     dryRun,
     yes,
     autoInstallGh,
+    publishGhPages,
     ghPagesRepo,
     ghPagesBranch,
     ghPagesDir
@@ -2203,7 +2211,7 @@ async function main(): Promise<void> {
   const ghDirResolved = (ghPagesDir ?? config.gh?.dir ?? 'csctf').trim() || 'csctf'
   const hasStoredGh = Boolean(config.gh)
   const hasExplicitRepo = Boolean(ghPagesRepo)
-  const shouldPublish = hasExplicitRepo || hasStoredGh
+  const shouldPublish = publishGhPages || hasExplicitRepo || hasStoredGh
   const shouldRemember = rememberGh || (!config.gh && shouldPublish)
 
   try {

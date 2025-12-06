@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chat_shared_conve
 
 ## 🛡️ Security & privacy (deep dive)
 - Network: only the share URL plus optional update check; publish uses git/gh over HTTPS. No other calls.  
-- Tokens: only `GITHUB_TOKEN`; never stored; confirmation gate unless `--yes`.  
+- Auth: GitHub CLI (`gh`) for publishing; no tokens are stored; confirmation gate unless `--yes`.  
 - HTML output: no JS, inline styles only; removes citation pills and data-start/end attributes; highlight.js used in a static way.  
 - Filesystem: temp+rename write pattern; collision-proof naming; config stored under `~/.config/csctf/config.json` (GH settings/history).
 
@@ -69,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chat_shared_conve
 ## 🧭 Failure modes & remedies
 - “No messages were found”: link is private or layout changed; ensure it’s a public share, retry with `--timeout-ms 90000`, report the URL.  
 - Timeout or blank page: slow network/CDN; raise `--timeout-ms`, verify connectivity, ensure provider is reachable.  
-- Publish fails (auth): set `GITHUB_TOKEN` with repo write access; verify `--gh-pages-repo owner/name`; run `gh auth status`.  
+- Publish fails (auth): ensure `gh auth status` passes; verify `--gh-pages-repo owner/name`.  
 - Publish fails (branch/dir): pass `--gh-pages-branch` / `--gh-pages-dir`; use `--remember` to persist.  
 - Filename collisions: expected; tool appends `_2`, `_3`, … instead of clobbering.
 
@@ -79,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chat_shared_conve
 - HTML-only for embedding:  
   `csctf <url> --html-only --outfile site/chat.html`
 - Publish with remembered settings:  
-  `csctf <url> --gh-pages-repo you/repo --remember --yes`
+  `csctf <url> --publish-to-gh-pages --remember --yes`
 - Custom browser cache:  
   `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright csctf <url>`
 - Longer/slower shares:  
@@ -119,7 +119,7 @@ You’ll get two files in your current directory with a clean, collision-proof n
 csctf <share-url> \
   [--timeout-ms 60000] [--outfile path] [--quiet] [--check-updates] [--version] \
   [--no-html] [--html-only] [--md-only] \
-  [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir csctf] \
+  [--publish-to-gh-pages] [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir csctf] \
   [--remember] [--forget-gh-pages] [--dry-run] [--yes] [--gh-install]
 
 csctf https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70 --timeout-ms 90000
@@ -129,8 +129,7 @@ Swap in Gemini or Grok share URLs—flow is identical.
 What you’ll see:
 - Headless Chromium launch (first run downloads the Playwright bundle).
 - `✔ Saved <file>.md` plus the absolute path; an HTML twin (`.html`) is also written by default. Use `--no-html` to skip.
-- (Optional) Publish to GitHub Pages with `--gh-pages-repo <owner/name>` (defaults to remembered repo or `my_shared_conversations`). Confirm by typing `PROCEED` unless you pass `--yes`. Use `--remember` to persist repo/branch/dir; `--forget-gh-pages` to clear; `--dry-run` to simulate.
-- (Optional) Publish HTML/MD to GitHub Pages via `--gh-pages-repo <repo> [--gh-pages-branch gh-pages] [--gh-pages-dir csctf]` with `GITHUB_TOKEN` set.
+- One-flag publish: `--publish-to-gh-pages` uses your logged-in `gh` user and the default repo name `my_shared_conversations` (or remembered settings). Confirm by typing `PROCEED` unless you pass `--yes`. Use `--remember` to persist repo/branch/dir; `--forget-gh-pages` to clear; `--dry-run` to simulate. Auth uses `gh`.
 - Also works with Gemini and Grok share links (public).
 
 ## 📋 Flags at a glance
@@ -142,7 +141,8 @@ What you’ll see:
 | `--quiet` | verbose | Minimal logging | Errors still print. |
 | `--check-updates` | off | Print latest release tag | No network otherwise. |
 | `--version` | off | Print version and exit | |
-| `--gh-pages-repo` | remembered / `my_shared_conversations` | Target repo for publish | Requires `GITHUB_TOKEN`. |
+| `--publish-to-gh-pages` | off | Publish with defaults | Uses `gh` login + `my_shared_conversations` (or remembered). |
+| `--gh-pages-repo` | remembered / `my_shared_conversations` | Target repo for publish | Requires `gh` authenticated. |
 | `--gh-pages-branch` | `gh-pages` | Publish branch | Created if missing. |
 | `--gh-pages-dir` | `csctf` | Subdirectory in repo | Keeps exports isolated. |
 | `--remember` / `--forget-gh-pages` | off | Persist/clear GH config | Stored under `~/.config/csctf/config.json`. |
@@ -169,23 +169,20 @@ What you’ll see:
 
 ## 🌐 GitHub Pages quick recipe
 ```bash
-GITHUB_TOKEN=... csctf <share-url> \
-  --gh-pages-repo youruser/my_shared_conversations \
-  --gh-pages-branch gh-pages \
-  --gh-pages-dir csctf \
-  --yes
+csctf <share-url> --publish-to-gh-pages --yes
 ```
-- Minimal steps:
-  1) Set `GITHUB_TOKEN` (repo write).  
-  2) Run the command above with your repo.  
-  3) Next time, reuse remembered settings with `--remember` (or clear with `--forget-gh-pages`).  
-  4) Use `--yes` to skip the `PROCEED` prompt; add `--dry-run` to see what would publish.
-- Without `--yes`, you must type `PROCEED`. Use `--remember` to persist repo/branch/dir; `--forget-gh-pages` to clear. `--dry-run` clones/builds the index but skips commit/push.
+- Requirements: `gh` installed and authenticated (`gh auth status`).
+- Defaults: repo `<your-gh-username>/my_shared_conversations`, branch `gh-pages`, dir `csctf`.
+- One-time remember for even shorter runs:
+  - First: `csctf <share-url> --publish-to-gh-pages --remember --yes`
+  - Then: `csctf <share-url> --yes` (reuses remembered repo/branch/dir)
+- Customize anytime: `--gh-pages-repo owner/name`, `--gh-pages-branch`, `--gh-pages-dir`.
+- Preview without pushing: `--dry-run`.
+- Without `--yes`, you must type `PROCEED`. Use `--forget-gh-pages` to clear remembered settings.
 
 ## 🌱 Environment variables
 - CLI:
   - `PLAYWRIGHT_BROWSERS_PATH`: reuse a cached Chromium bundle.
-  - `GITHUB_TOKEN`: required for publishing.
 - Installer:
   - `VERSION=vX.Y.Z`: pin release tag (otherwise `latest`).
   - `DEST=/path`: install dir (default `~/.local/bin`; `--system` → `/usr/local/bin`).
@@ -263,7 +260,7 @@ bun run build:all
 | Download stalls | Retry with cache; verify network; increase `--timeout-ms`. |
 | Filename conflicts/invalid names | Filenames are slugified/truncated; auto-suffix `_2`, `_3`, … to avoid clobbering. |
 | Partial writes | Files are written temp+rename; re-run if interrupted. |
-| GitHub Pages publish fails | Set `GITHUB_TOKEN` with repo write access; ensure branch exists or pass `--gh-pages-branch`; use `--gh-pages-dir` to isolate exports. |
+| GitHub Pages publish fails | Ensure `gh auth status` passes; ensure branch exists or pass `--gh-pages-branch`; use `--gh-pages-dir` to isolate exports. |
 | Repo not found (publish) | Provide `--gh-pages-repo owner/name`; ensure `gh` is logged in if relying on defaults. |
 
 ## ⚠️ Limitations & known behaviors
