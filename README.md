@@ -23,6 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_co
 - **Accurate Markdown**: Preserves fenced code blocks with detected language, strips citation pills, normalizes whitespace and line terminators.
 - **Deterministic filenames**: Slugifies the conversation title and auto-increments to avoid clobbering existing files.
 - **Readable progress**: Colorized, step-based console output powered by `chalk`.
+- **ChatGPT + Claude**: Works with public share links from chatgpt.com/share and claude.ai/share.
 
 ## 💡 Why csctm exists
 - Copy/pasting ChatGPT shares often breaks fenced code blocks, loses language hints, and produces messy filenames. csctm fixes that with stable slugs, language-preserving fences, and collision-proof outputs.
@@ -68,6 +69,7 @@ What you’ll see:
 - `✔ Saved <file>.md` plus the absolute path; an HTML twin (`.html`) is also written by default. Use `--no-html` to skip.
 - (Optional) Publish to GitHub Pages with `--gh-pages-repo <owner/name>` (defaults to remembered repo or `my_shared_chatgpt_conversations`). Confirm by typing `PROCEED` unless you pass `--yes`. Use `--remember` to persist repo/branch/dir; `--forget-gh-pages` to clear; `--dry-run` to simulate.
 - (Optional) Publish HTML/MD to GitHub Pages via `--gh-pages-repo <repo> [--gh-pages-branch gh-pages] [--gh-pages-dir csctm]` with `GITHUB_TOKEN` set.
+- Also works with Claude share links, e.g. `https://claude.ai/share/<id>`.
 
 ## 📋 Flags at a glance
 | Flag | Default | Purpose | Notes |
@@ -155,6 +157,7 @@ bun run build:all
   CSCTM_E2E=1 bun run test:e2e
   ```
 - What E2E checks: exit code 0, `.md` + `.html` exist, minimum length/lines, correct headers/source URL, balanced fences, sanitized HTML (no `<script>`), normalized newlines.
+- Optional Claude E2E: set `CSCTM_E2E_CLAUDE_URL=https://claude.ai/share/<id>` and rerun `bun run test:e2e` (skipped if not set).
 
 ## 🧭 Examples (outputs)
 - Example input: `https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70`

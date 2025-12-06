@@ -12,6 +12,8 @@ import os from 'os'
 import readline from 'readline'
 import pkg from '../package.json' assert { type: 'json' }
 
+type Provider = 'chatgpt' | 'claude'
+
 type ScrapedMessage = {
   role: string
   html: string
@@ -553,26 +555,54 @@ function parseArgs(args: string[]): ParsedArgs {
   }
 }
 
+const formatDuration = (ms: number): string => {
+  if (ms < 1) return '<1ms'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const rem = seconds % 60
+  return `${minutes}m ${rem.toFixed(1)}s`
+}
+
 const STEP = (quiet: boolean) => (n: number, total: number, msg: string) => {
-  if (quiet) return
-  console.log(`${chalk.gray(`[${n}/${total}]`)} ${msg}`)
+  if (quiet) return () => {}
+  const start = Date.now()
+  console.log(`${chalk.gray(`[${n}/${total}]`)} ${chalk.cyan(msg)}`)
+  return () => {
+    const elapsed = Date.now() - start
+    console.log(`   ${chalk.gray(`↳ ${formatDuration(elapsed)}`)}`)
+  }
 }
 
 const FAIL = (quiet: boolean) => (msg: string) => {
-  if (!quiet) console.error(chalk.red(`✖ ${msg}`))
-  else console.error(msg)
+  const hint = quiet ? ' (rerun without --quiet for more detail)' : ''
+  const text = `${msg}${hint}`
+  if (!quiet) console.error(chalk.red(`✖ ${text}`))
+  else console.error(text)
 }
 
-const DONE = (quiet: boolean) => (msg: string) => {
+const DONE = (quiet: boolean) => (msg: string, elapsedMs?: number) => {
   if (quiet) return
-  console.log(chalk.green(`✔ ${msg}`))
+  const suffix = typeof elapsedMs === 'number' ? chalk.gray(` (${formatDuration(elapsedMs)})`) : ''
+  console.log(`${chalk.green('✔')} ${msg}${suffix}`)
 }
 
 function usage(): void {
   console.log(
-    `Usage: csctm <chatgpt-share-url> [--timeout-ms 60000] [--outfile path] [--quiet] [--check-updates] [--version] [--no-html] [--html-only] [--md-only] [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir dir] [--remember] [--forget-gh-pages] [--dry-run] [--yes]`
+    [
+      `Usage: csctm <chatgpt-share-url> [--timeout-ms 60000] [--outfile path] [--quiet] [--check-updates] [--version] [--no-html] [--html-only] [--md-only] [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir dir] [--remember] [--forget-gh-pages] [--dry-run] [--yes]`,
+      '',
+      'Common recipes:',
+      `  Basic scrape (MD + HTML): csctm https://chatgpt.com/share/<id>`,
+      `  Longer timeout:           csctm <url> --timeout-ms 90000`,
+      `  Markdown only:            csctm <url> --md-only`,
+      `  HTML only:                csctm <url> --html-only`,
+      `  Publish (public):         GITHUB_TOKEN=... csctm <url> --gh-pages-repo owner/name --yes`,
+      `  Remember GH settings:     csctm <url> --gh-pages-repo owner/name --remember --yes`,
+      ''
+    ].join('\n')
   )
-  console.log(`Example: csctm https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70 --timeout-ms 90000`)
 }
 
 export function slugify(title: string): string {
@@ -623,18 +653,29 @@ function buildTurndown(): TurndownService {
   return td
 }
 
-async function checkForUpdates(): Promise<void> {
+async function checkForUpdates(currentVersion: string, quiet: boolean): Promise<void> {
   const latestUrl =
     'https://api.github.com/repos/Dicklesworthstone/chatgpt_shared_conversation_to_markdown_file/releases/latest'
   try {
     const res = await fetch(latestUrl, { headers: { Accept: 'application/vnd.github+json' } })
-    if (!res.ok) return
+    if (!res.ok) {
+      if (!quiet) console.log(chalk.gray('Skipped update check (GitHub unavailable).'))
+      return
+    }
     const data = (await res.json()) as { tag_name?: string }
     if (data?.tag_name) {
-      console.log(chalk.gray(`Latest release: ${data.tag_name}`))
+      const latest = data.tag_name.replace(/^v/i, '')
+      const current = currentVersion.replace(/^v/i, '')
+      if (latest && !quiet) {
+        const upToDate = latest === current
+        const msg = upToDate
+          ? chalk.gray(`You are on the latest version (v${current}).`)
+          : chalk.gray(`Latest release: v${latest} (current v${current}).`)
+        console.log(msg)
+      }
     }
   } catch {
-    // silently ignore update check failures
+    if (!quiet) console.log(chalk.gray('Skipped update check (offline or GitHub unavailable).'))
   }
 }
 
@@ -898,6 +939,8 @@ function cleanHtml(html: string): string {
   return html
     .replace(/<span[^>]*data-testid="webpage-citation-pill"[^>]*>[\s\S]*?<\/span>/gi, '')
     .replace(/<a[^>]*data-testid="webpage-citation-pill"[^>]*>[\s\S]*?<\/a>/gi, '')
+    .replace(/<button[^>]*data-testid="[^"]*(copy|clipboard)[^"]*"[^>]*>[\s\S]*?<\/button>/gi, '')
+    .replace(/<div[^>]*data-testid="[^"]*(tooltip|pill)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '')
     .replace(/\sdata-start="\d+"/g, '')
     .replace(/\sdata-end="\d+"/g, '')
 }
@@ -907,7 +950,21 @@ function normalizeLineTerminators(markdown: string): string {
   return markdown.replace(/[\u2028\u2029]/g, '\n')
 }
 
-async function scrape(url: string, timeoutMs: number): Promise<{ title: string; markdown: string; retrievedAt: string }> {
+function detectProvider(url: string): Provider {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    if (host.endsWith('claude.ai')) return 'claude'
+  } catch {
+    // ignore
+  }
+  return 'chatgpt'
+}
+
+async function scrape(
+  url: string,
+  timeoutMs: number,
+  provider: Provider
+): Promise<{ title: string; markdown: string; retrievedAt: string }> {
   const td = buildTurndown()
   let browser: Browser | null = null
 
@@ -927,9 +984,20 @@ async function scrape(url: string, timeoutMs: number): Promise<{ title: string; 
       'loading the share URL (check that the link is public and reachable)'
     )
 
+    const selectorSets =
+      provider === 'claude'
+        ? [
+            'main [data-testid="message"]',
+            'main [data-testid="message-row"]',
+            '[data-testid="chat-message"]',
+            'article [data-message-author-role]'
+          ]
+        : ['article [data-message-author-role]']
+    const selector = selectorSets.join(',')
+
     await attemptWithBackoff(
       async () => {
-        await page.waitForSelector('article [data-message-author-role]', { timeout: timeoutMs })
+        await page.waitForSelector(selector, { timeout: timeoutMs })
       },
       timeoutMs,
       'waiting for conversation content (page layout may have changed or the link may be private)'
@@ -937,12 +1005,25 @@ async function scrape(url: string, timeoutMs: number): Promise<{ title: string; 
 
     const title = await page.title()
     const messages = (await page.$$eval(
-      'article [data-message-author-role]',
+      selector,
       (nodes: Element[]) =>
         nodes.map(node => {
           const element = node as HTMLElement
+          const attrRole =
+            element.getAttribute('data-message-author-role') ??
+            element.getAttribute('data-author') ??
+            element.getAttribute('data-role') ??
+            ''
+          const testId = (element.getAttribute('data-testid') ?? '').toLowerCase()
+          const className = (element.getAttribute('class') ?? '').toLowerCase()
+          const inferRole = (): string => {
+            const source = `${attrRole} ${testId} ${className}`
+            if (/assistant|bot|claude|system/.test(source)) return 'assistant'
+            if (/user|human|you/.test(source)) return 'user'
+            return 'unknown'
+          }
           return {
-            role: element.getAttribute('data-message-author-role') ?? 'unknown',
+            role: attrRole || inferRole(),
             html: element.innerHTML
           }
         })
@@ -951,8 +1032,9 @@ async function scrape(url: string, timeoutMs: number): Promise<{ title: string; 
     if (!messages.length) throw new Error('No messages were found in the shared conversation.')
 
     const lines: string[] = []
-    const titleWithoutPrefix = title.replace(/^ChatGPT\s*-?\s*/i, '')
-    lines.push(`# ChatGPT Conversation: ${titleWithoutPrefix}`)
+    const titleWithoutPrefix = title.replace(/^(ChatGPT|Claude)\s*-?\s*/i, '')
+    const headingPrefix = provider === 'claude' ? 'Claude' : 'ChatGPT'
+    lines.push(`# ${headingPrefix} Conversation: ${titleWithoutPrefix}`)
     lines.push('')
     const retrievedAt = new Date().toISOString()
     lines.push(`Source: ${url}`)
@@ -1010,10 +1092,19 @@ async function main(): Promise<void> {
     process.exit(url ? 0 : 1)
   }
   if (!/^https?:\/\//i.test(url)) {
-    fail('Please pass a valid http(s) URL (public ChatGPT share link).')
+    fail('Please pass a valid http(s) URL (public ChatGPT or Claude share link).')
     usage()
     process.exit(1)
   }
+  const sharePattern =
+    /^https?:\/\/(chatgpt\.com|share\.chatgpt\.com|chat\.openai\.com|claude\.ai)\/share\//i
+  if (!sharePattern.test(url)) {
+    fail(
+      'The URL should be a public ChatGPT or Claude share link (e.g., https://chatgpt.com/share/<id> or https://claude.ai/share/<id>).'
+    )
+    process.exit(1)
+  }
+  const provider = detectProvider(url)
 
   if (forgetGh) {
     forgetGhConfig()
@@ -1025,6 +1116,12 @@ async function main(): Promise<void> {
     fail('At least one output format is required (Markdown and/or HTML).')
     process.exit(1)
   }
+  if (!quiet && htmlOnly) {
+    console.log(chalk.yellow('Note: --html-only will skip Markdown output.'))
+  }
+  if (!quiet && mdOnly) {
+    console.log(chalk.yellow('Note: --md-only will skip HTML output.'))
+  }
 
   const ghRepoResolved = ghPagesRepo ?? config.gh?.repo ?? DEFAULT_GH_REPO
   const ghBranchResolved = ghPagesBranch || config.gh?.branch || 'gh-pages'
@@ -1033,6 +1130,7 @@ async function main(): Promise<void> {
   const shouldRemember = rememberGh || (!config.gh && shouldPublish)
 
   try {
+    const overallStart = Date.now()
     const totalSteps =
       4 + // launch, open, convert, final "all done"
       (produceMd ? 1 : 0) +
@@ -1042,12 +1140,14 @@ async function main(): Promise<void> {
       (checkUpdates ? 1 : 0)
     let idx = 1
 
-    step(idx++, totalSteps, chalk.cyan('Launching headless Chromium'))
-    step(idx++, totalSteps, chalk.cyan('Opening share link'))
-    const { title, markdown, retrievedAt } = await scrape(url, timeoutMs)
+    const endLaunch = step(idx++, totalSteps, 'Launching headless Chromium')
+    const endOpen = step(idx++, totalSteps, 'Opening share link')
+    const { title, markdown, retrievedAt } = await scrape(url, timeoutMs, provider)
+    endLaunch()
+    endOpen()
 
-    step(idx++, totalSteps, chalk.cyan('Converting to Markdown'))
-    const name = slugify(title.replace(/^ChatGPT\s*-?\s*/i, ''))
+    const endConvert = step(idx++, totalSteps, 'Converting to Markdown')
+    const name = slugify(title.replace(/^(ChatGPT|Claude)\s*-?\s*/i, ''))
     const resolvedOutfile = outfile ? path.resolve(outfile) : path.join(process.cwd(), `${name}.md`)
     const parsedOutfile = path.parse(resolvedOutfile)
     const outfileStem = path.join(parsedOutfile.dir, parsedOutfile.name || name)
@@ -1057,37 +1157,50 @@ async function main(): Promise<void> {
     const writtenFiles: { path: string; kind: 'md' | 'html' }[] = []
     if (produceMd) {
       const targetMd = fs.existsSync(mdOutfile) ? uniquePath(mdOutfile) : mdOutfile
-      step(idx++, totalSteps, chalk.cyan('Writing Markdown'))
+      const endMd = step(idx++, totalSteps, 'Writing Markdown')
       writeAtomic(targetMd, markdown)
       writtenFiles.push({ path: targetMd, kind: 'md' })
+      endMd()
     }
 
     if (produceHtml) {
       const htmlTarget = fs.existsSync(htmlOutfile) ? uniquePath(htmlOutfile) : htmlOutfile
-      step(idx++, totalSteps, chalk.cyan('Rendering HTML'))
+      const endHtml = step(idx++, totalSteps, 'Rendering HTML')
       const html = renderHtmlDocument(markdown, title, url, retrievedAt)
       writeAtomic(htmlTarget, html)
       writtenFiles.push({ path: htmlTarget, kind: 'html' })
+      endHtml()
     }
+    endConvert()
 
     const savedNames = writtenFiles.map(f => path.basename(f.path)).join(', ')
     done(`Saved ${savedNames}`)
     if (!quiet) {
-      step(idx++, totalSteps, chalk.cyan('Location'))
+      const endLocation = step(idx++, totalSteps, 'Location')
       writtenFiles.forEach(f => {
         console.log(`   ${chalk.green(f.path)}`)
       })
+      const mdPath = writtenFiles.find(f => f.kind === 'md')
+      const htmlPath = writtenFiles.find(f => f.kind === 'html')
+      const viewerHint =
+        process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open'
+      if (mdPath || htmlPath) {
+        console.log(chalk.gray(`   Hint: ${viewerHint} <path> to view the export locally.`))
+      }
+      endLocation()
     }
 
     if (shouldPublish) {
       const publishSummary = [
-        'You are about to publish the following files to GitHub Pages (public):',
-        ...writtenFiles.map(f => ` - ${f.path}`),
-        `Repo: ${ghRepoResolved}  Branch: ${ghBranchResolved}  Dir: ${ghDirResolved}`
+        chalk.yellow('You are about to publish to GitHub Pages (public):'),
+        chalk.yellow(`Repo: ${ghRepoResolved}  Branch: ${ghBranchResolved}  Dir: ${ghDirResolved}`),
+        chalk.yellow('Files:'),
+        ...writtenFiles.map(f => chalk.yellow(` - ${f.path}`)),
+        chalk.yellow('Type PROCEED to continue, or CTRL+C to abort.')
       ].join('\n')
       await confirmPublish(publishSummary, yes)
       if (!dryRun) ensureGhAvailable(autoInstallGh)
-      step(idx++, totalSteps, chalk.cyan('Publishing to GitHub Pages'))
+      const endPublish = step(idx++, totalSteps, 'Publishing to GitHub Pages')
       const updatedConfig = await publishToGhPages({
         files: writtenFiles,
         repo: ghRepoResolved,
@@ -1102,17 +1215,26 @@ async function main(): Promise<void> {
       if (shouldRemember && !dryRun) {
         saveConfig(updatedConfig)
       }
+      endPublish()
     }
 
     if (checkUpdates) {
-      step(idx++, totalSteps, chalk.cyan('Checking for updates'))
-      await checkForUpdates()
+      const endUpdates = step(idx++, totalSteps, 'Checking for updates')
+      await checkForUpdates(pkg.version, quiet)
+      endUpdates()
     }
 
-    step(idx++, totalSteps, chalk.cyan('All done. Enjoy!'))
+    step(idx++, totalSteps, 'All done. Enjoy!')()
+    done('Finished', Date.now() - overallStart)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    fail(message)
+    const networkHints =
+      'Check that the share link is public and reachable; try --timeout-ms 90000 if the page is slow.'
+    const formatted =
+      message.includes('No messages were found') || message.toLowerCase().includes('timeout')
+        ? `${message} (${networkHints})`
+        : message
+    fail(formatted)
     process.exit(1)
   }
 }

@@ -67,10 +67,10 @@ maybe_add_path() {
         if [ "$UPDATED" -eq 1 ]; then
           warn "PATH updated in ~/.zshrc/.bashrc; restart your shell to use ${BINARY}"
         else
-          warn "Add $DEST to PATH to use ${BINARY}"
+          warn "Add $DEST to PATH to use ${BINARY} (export PATH=\"$DEST:\$PATH\")"
         fi
       else
-        warn "Add $DEST to PATH to use ${BINARY}"
+        warn "Add $DEST to PATH to use ${BINARY} (export PATH=\"$DEST:\$PATH\")"
       fi
     ;;
   esac
@@ -104,11 +104,11 @@ detect_target() {
   ASSET=""
   case "${OS}-${ARCH}" in
     linux-x86_64) ASSET="csctm-linux" ;;
-    linux-aarch64) warn "No prebuilt binary for linux/aarch64; will build from source"; FROM_SOURCE=1 ;;
+    linux-aarch64) warn "No prebuilt binary for linux/aarch64; will build from source (requires git + bun)"; FROM_SOURCE=1 ;;
     darwin-arm64) ASSET="csctm-macos" ;;
-    darwin-x86_64) warn "No prebuilt binary for macOS Intel; will build from source"; FROM_SOURCE=1 ;;
+    darwin-x86_64) warn "No prebuilt binary for macOS Intel; will build from source (requires git + bun)"; FROM_SOURCE=1 ;;
     msys*-*|mingw*-*|cygwin*-*) ASSET="csctm-windows.exe" ;;
-    *) warn "Unknown platform ${OS}/${ARCH}; will build from source"; FROM_SOURCE=1 ;;
+    *) warn "Unknown platform ${OS}/${ARCH}; will build from source (requires git + bun)"; FROM_SOURCE=1 ;;
   esac
 }
 
@@ -151,7 +151,7 @@ download_binary() {
   local url="https://github.com/${OWNER}/${REPO}/releases/${tag_path}/${ASSET}"
   info "Downloading ${url}"
   if ! curl -fL "$url" -o "$TMP/${ASSET}"; then
-    warn "Download failed; falling back to build from source"
+    warn "Download failed; falling back to build from source (requires git + bun)"
     FROM_SOURCE=1
     return 1
   fi
@@ -218,14 +218,38 @@ TMP=$(mktemp -d)
 trap cleanup EXIT
 mkdir -p "$DEST"
 
+STEP_TOTAL=6
+STEP_IDX=1
+log_step() {
+  info "[$STEP_IDX/$STEP_TOTAL] $*"
+  STEP_IDX=$((STEP_IDX+1))
+}
+
+log_step "Resolved version ${VERSION:-latest}"
+log_step "Detected platform ${OS:-unknown}/${ARCH:-unknown}"
+
+DOWNLOAD_OK=1
 if [ "$FROM_SOURCE" -eq 0 ]; then
-  download_binary || true
+  log_step "Downloading release artifact"
+  download_binary || DOWNLOAD_OK=0
+else
+  log_step "Skipping download (build from source requested)"
+  DOWNLOAD_OK=0
+fi
+
+if [ "$FROM_SOURCE" -eq 0 ] && [ "$DOWNLOAD_OK" -eq 0 ]; then
+  FROM_SOURCE=1
 fi
 
 if [ "$FROM_SOURCE" -eq 1 ]; then
+  log_step "Building from source"
   build_from_source
+else
+  log_step "Build step skipped (binary already downloaded)"
 fi
 
+log_step "Ensuring ${DEST} is on PATH"
 maybe_add_path
+log_step "Finalizing"
 ok "Done. Run: ${BINARY} <chatgpt-share-url>"
 
