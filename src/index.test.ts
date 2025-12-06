@@ -57,6 +57,7 @@ describe("publishToGhPages (dry run)", () => {
       branch: "gh-pages",
       dir: "site",
       quiet: true,
+      verbose: false,
       dryRun: true,
       remember: false,
       config: {},
