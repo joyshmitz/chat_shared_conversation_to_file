@@ -141,15 +141,60 @@ async function resolveGitHubToken(): Promise<string> {
   }
   console.log(
     chalk.yellow(
-      'No GITHUB_TOKEN found. Paste a token with repo write access (recommended: classic token with repo scope or fine-grained with contents:write). Input is not stored on disk.'
+      'No GITHUB_TOKEN found. Paste a token with repo write access (classic repo scope or fine-grained contents:write). Input will not echo.'
     )
   )
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+
+  const readSecret = async (): Promise<string> => {
+    return await new Promise((resolve, reject) => {
+      const chunks: string[] = []
+      const onData = (b: Buffer) => {
+        const ch = b.toString('utf8')
+        if (ch === '\u0003') {
+          cleanup()
+          reject(new Error('Cancelled'))
+          return
+        }
+        if (ch === '\r' || ch === '\n') {
+          cleanup()
+          process.stdout.write('\n')
+          resolve(chunks.join(''))
+          return
+        }
+        if (ch === '\u0008' || ch === '\u007f') {
+          // backspace
+          chunks.pop()
+          return
+        }
+        chunks.push(ch)
+      }
+      const cleanup = () => {
+        process.stdin.off('data', onData)
+        try {
+          process.stdin.setRawMode?.(false)
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        process.stdin.setRawMode?.(true)
+      } catch {
+        /* ignore */
+      }
+      process.stdin.on('data', onData)
+      process.stdout.write('GITHUB_TOKEN: ')
+    })
+  }
+
   let token = ''
   try {
-    token = await new Promise(resolve => rl.question('GITHUB_TOKEN: ', resolve))
+    token = await readSecret()
   } finally {
-    rl.close()
+    try {
+      process.stdin.setRawMode?.(false)
+    } catch {
+      /* ignore */
+    }
   }
   const trimmed = token.trim()
   if (!trimmed) throw new Error('Empty token provided.')
@@ -888,6 +933,7 @@ async function checkForUpdates(currentVersion: string, quiet: boolean): Promise<
 async function attemptWithBackoff(fn: () => Promise<void>, timeoutMs: number, label: string): Promise<void> {
   const attempts = 3
   const baseDelay = 500
+  const deadline = Date.now() + timeoutMs
   let lastErr: unknown
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -897,6 +943,7 @@ async function attemptWithBackoff(fn: () => Promise<void>, timeoutMs: number, la
       lastErr = err
       if (i < attempts - 1) {
         const delay = baseDelay * (i + 1)
+        if (Date.now() + delay > deadline) break
         await new Promise(res => setTimeout(res, delay))
       }
     }
