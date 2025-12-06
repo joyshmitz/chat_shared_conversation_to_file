@@ -12,7 +12,7 @@ import os from 'os'
 import readline from 'readline'
 import pkg from '../package.json' assert { type: 'json' }
 
-type Provider = 'chatgpt' | 'claude' | 'gemini'
+type Provider = 'chatgpt' | 'claude' | 'gemini' | 'grok'
 
 type ScrapedMessage = {
   role: string
@@ -591,12 +591,13 @@ const DONE = (quiet: boolean) => (msg: string, elapsedMs?: number) => {
 function usage(): void {
   console.log(
     [
-      `Usage: csctm <chatgpt|claude|gemini-share-url> [--timeout-ms 60000] [--outfile path] [--quiet] [--check-updates] [--version] [--no-html] [--html-only] [--md-only] [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir dir] [--remember] [--forget-gh-pages] [--dry-run] [--yes]`,
+      `Usage: csctm <chatgpt|claude|gemini|grok-share-url> [--timeout-ms 60000] [--outfile path] [--quiet] [--check-updates] [--version] [--no-html] [--html-only] [--md-only] [--gh-pages-repo owner/name] [--gh-pages-branch gh-pages] [--gh-pages-dir dir] [--remember] [--forget-gh-pages] [--dry-run] [--yes]`,
       '',
       'Common recipes:',
       `  Basic scrape (ChatGPT):   csctm https://chatgpt.com/share/<id>`,
       `  Basic scrape (Claude):    csctm https://claude.ai/share/<id>`,
       `  Basic scrape (Gemini):    csctm https://gemini.google.com/share/<id>`,
+      `  Basic scrape (Grok):      csctm https://grok.com/share/<id>`,
       `  Longer timeout:           csctm <url> --timeout-ms 90000`,
       `  Markdown only:            csctm <url> --md-only`,
       `  HTML only:                csctm <url> --html-only`,
@@ -957,6 +958,7 @@ function detectProvider(url: string): Provider {
     const host = new URL(url).hostname.toLowerCase()
     if (host.endsWith('claude.ai')) return 'claude'
     if (host.endsWith('gemini.google.com')) return 'gemini'
+    if (host.endsWith('grok.com')) return 'grok'
   } catch {
     // ignore
   }
@@ -1003,6 +1005,14 @@ async function scrape(
             'main [data-testid*="message"]',
             'article [data-message-author-role]'
           ]
+        : provider === 'grok'
+        ? [
+            'main [data-testid*="message"]',
+            'main [data-message-author-role]',
+            'main [data-author]',
+            '[data-testid*="message"]',
+            'article [data-message-author-role]'
+          ]
         : ['article [data-message-author-role]']
     const selector = selectorSets.join(',')
 
@@ -1029,7 +1039,7 @@ async function scrape(
           const className = (element.getAttribute('class') ?? '').toLowerCase()
           const inferRole = (): string => {
             const source = `${attrRole} ${testId} ${className}`
-            if (/assistant|bot|claude|system|model|gemini/.test(source)) return 'assistant'
+            if (/assistant|bot|claude|system|model|gemini|grok/.test(source)) return 'assistant'
             if (/user|human|you/.test(source)) return 'user'
             return 'unknown'
           }
@@ -1043,8 +1053,9 @@ async function scrape(
     if (!messages.length) throw new Error('No messages were found in the shared conversation.')
 
     const lines: string[] = []
-    const titleWithoutPrefix = title.replace(/^(ChatGPT|Claude|Gemini)\s*-?\s*/i, '')
-    const headingPrefix = provider === 'claude' ? 'Claude' : provider === 'gemini' ? 'Gemini' : 'ChatGPT'
+    const titleWithoutPrefix = title.replace(/^(ChatGPT|Claude|Gemini|Grok)\s*-?\s*/i, '')
+    const headingPrefix =
+      provider === 'claude' ? 'Claude' : provider === 'gemini' ? 'Gemini' : provider === 'grok' ? 'Grok' : 'ChatGPT'
     lines.push(`# ${headingPrefix} Conversation: ${titleWithoutPrefix}`)
     lines.push('')
     const retrievedAt = new Date().toISOString()
@@ -1108,10 +1119,10 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   const sharePattern =
-    /^https?:\/\/(chatgpt\.com|share\.chatgpt\.com|chat\.openai\.com|claude\.ai|gemini\.google\.com)\/share\//i
+    /^https?:\/\/(chatgpt\.com|share\.chatgpt\.com|chat\.openai\.com|claude\.ai|gemini\.google\.com|grok\.com)\/share\//i
   if (!sharePattern.test(url)) {
     fail(
-      'The URL should be a public ChatGPT, Claude, or Gemini share link (e.g., https://chatgpt.com/share/<id>, https://claude.ai/share/<id>, or https://gemini.google.com/share/<id>).'
+      'The URL should be a public ChatGPT, Claude, Gemini, or Grok share link (e.g., https://chatgpt.com/share/<id>, https://claude.ai/share/<id>, https://gemini.google.com/share/<id>, or https://grok.com/share/<id>).'
     )
     process.exit(1)
   }
@@ -1158,7 +1169,7 @@ async function main(): Promise<void> {
     endOpen()
 
     const endConvert = step(idx++, totalSteps, 'Converting to Markdown')
-    const name = slugify(title.replace(/^(ChatGPT|Claude|Gemini)\s*-?\s*/i, ''))
+    const name = slugify(title.replace(/^(ChatGPT|Claude|Gemini|Grok)\s*-?\s*/i, ''))
     const resolvedOutfile = outfile ? path.resolve(outfile) : path.join(process.cwd(), `${name}.md`)
     const parsedOutfile = path.parse(resolvedOutfile)
     const outfileStem = path.join(parsedOutfile.dir, parsedOutfile.name || name)

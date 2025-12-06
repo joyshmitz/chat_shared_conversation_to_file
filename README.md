@@ -5,7 +5,7 @@
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Single-file Bun-native CLI that downloads a ChatGPT share link and saves a clean Markdown transcript with fenced code blocks, stable filenames, and rich terminal output.
+Single-file Bun-native CLI that downloads a ChatGPT share link (or share links from Claude, Gemini, and Grok) and saves a clean Markdown transcript with fenced code blocks, stable filenames, and rich terminal output.
 
 <div align="center">
 
@@ -25,6 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_co
 - **Readable progress**: Colorized, step-based console output powered by `chalk`.
 - **ChatGPT + Claude**: Works with public share links from chatgpt.com/share and claude.ai/share.
 - **Gemini**: Also handles public Gemini share links from gemini.google.com/share.
+- **Grok**: Also handles public Grok share links from grok.com/share.
 
 ## 💡 Why csctm exists
 - Copy/pasting ChatGPT shares often breaks fenced code blocks, loses language hints, and produces messy filenames. csctm fixes that with stable slugs, language-preserving fences, and collision-proof outputs.
@@ -72,6 +73,7 @@ What you’ll see:
 - (Optional) Publish HTML/MD to GitHub Pages via `--gh-pages-repo <repo> [--gh-pages-branch gh-pages] [--gh-pages-dir csctm]` with `GITHUB_TOKEN` set.
 - Also works with Claude share links, e.g. `https://claude.ai/share/<id>`.
 - Also works with Gemini share links, e.g. `https://gemini.google.com/share/<id>`.
+- Also works with Grok share links, e.g. `https://grok.com/share/<id>`.
 
 ## 📋 Flags at a glance
 | Flag | Default | Purpose | Notes |
@@ -161,6 +163,7 @@ bun run build:all
 - What E2E checks: exit code 0, `.md` + `.html` exist, minimum length/lines, correct headers/source URL, balanced fences, sanitized HTML (no `<script>`), normalized newlines.
 - Optional Claude E2E: set `CSCTM_E2E_CLAUDE_URL=https://claude.ai/share/<id>` and rerun `bun run test:e2e` (skipped if not set).
 - Optional Gemini E2E: set `CSCTM_E2E_GEMINI_URL=https://gemini.google.com/share/<id>` and rerun `bun run test:e2e` (skipped if not set).
+- Optional Grok E2E: set `CSCTM_E2E_GROK_URL=https://grok.com/share/<id>` and rerun `bun run test:e2e` (skipped if not set).
 
 ## 🧭 Examples (outputs)
 - Example input: `https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70`
