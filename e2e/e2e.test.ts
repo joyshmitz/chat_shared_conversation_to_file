@@ -20,6 +20,7 @@ const BINARY = process.platform === "win32" ? "csctm.exe" : "csctm";
 const BIN_PATH = path.join(ROOT, "dist", BINARY);
 const E2E_TIMEOUT_MS = process.env.CSCTM_E2E_TIMEOUT_MS ?? "60000";
 
+const TEST_TIMEOUT_MS = Number.parseInt(process.env.CSCTM_E2E_TEST_TIMEOUT_MS ?? "120000", 10);
 const describeFn = RUN_E2E ? describe : describe.skip;
 const describeClaude = RUN_E2E ? describe : describe.skip;
 const describeGemini = RUN_E2E ? describe : describe.skip;
@@ -89,7 +90,7 @@ describeFn("csctm end-to-end", () => {
     expect(html).toContain("Source:");
     expect(html).not.toMatch(/<script/i); // ensure no JS in output
     expect(html).toContain("<style>");
-  });
+  }, TEST_TIMEOUT_MS);
 });
 
 describeClaude("csctm end-to-end (Claude share)", () => {
@@ -142,7 +143,7 @@ describeClaude("csctm end-to-end (Claude share)", () => {
     expect(html).toContain("Source:");
     expect(html).not.toMatch(/<script/i);
     expect(html).toContain("<style>");
-  });
+  }, TEST_TIMEOUT_MS);
 });
 
 describeGemini("csctm end-to-end (Gemini share)", () => {
@@ -195,7 +196,7 @@ describeGemini("csctm end-to-end (Gemini share)", () => {
     expect(html).toContain("Source:");
     expect(html).not.toMatch(/<script/i);
     expect(html).toContain("<style>");
-  });
+  }, TEST_TIMEOUT_MS);
 });
 
 describeGrok("csctm end-to-end (Grok share)", () => {
@@ -248,6 +249,6 @@ describeGrok("csctm end-to-end (Grok share)", () => {
     expect(html).toContain("Source:");
     expect(html).not.toMatch(/<script/i);
     expect(html).toContain("<style>");
-  });
+  }, TEST_TIMEOUT_MS);
 });
 

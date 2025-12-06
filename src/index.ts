@@ -631,6 +631,19 @@ export function uniquePath(basePath: string): string {
 function buildTurndown(): TurndownService {
   const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
 
+  // Preserve paragraph structure for blocky containers that ChatGPT/Claude/Gemini use.
+  // Some share layouts wrap text in <div>/<section>/<article> without <p>; ensure we emit blank lines.
+  td.addRule('blockContainers', {
+    filter: ['div', 'section', 'article', 'main', 'header', 'footer'],
+    replacement: (content: string) => `\n\n${content.trim()}\n\n`
+  })
+
+  // Preserve explicit line breaks.
+  td.addRule('breaks', {
+    filter: ['br'],
+    replacement: () => '\n'
+  })
+
   const codeRule: Rule = {
     filter: (node: HTMLElement) => node.nodeName === 'PRE' && node.firstElementChild?.nodeName === 'CODE',
     replacement: (_content: string, node: HTMLElement) => {
@@ -946,6 +959,11 @@ function cleanHtml(html: string): string {
     .replace(/<span[^>]*data-testid="webpage-citation-pill"[^>]*>[\s\S]*?<\/span>/gi, '')
     .replace(/<a[^>]*data-testid="webpage-citation-pill"[^>]*>[\s\S]*?<\/a>/gi, '')
     .replace(/<button[^>]*data-testid="[^"]*(copy|clipboard)[^"]*"[^>]*>[\s\S]*?<\/button>/gi, '')
+    // Drop common “Copy code”/clipboard UI chrome that appears in shared pages.
+    .replace(/<button[^>]*>\s*Copy code\s*<\/button>/gi, '')
+    .replace(/<span[^>]*>\s*Copy code\s*<\/span>/gi, '')
+    .replace(/<div[^>]*class="[^"]*copy[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '')
+    .replace(/<button[^>]*role="button"[^>]*>\s*Copy\s*<\/button>/gi, '')
     .replace(/<div[^>]*data-testid="[^"]*(tooltip|pill)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '')
     .replace(/\sdata-start="\d+"/g, '')
     .replace(/\sdata-end="\d+"/g, '')
@@ -1069,7 +1087,8 @@ async function scrape(
     for (const msg of messages) {
       lines.push(`## ${msg.role === 'assistant' ? 'Assistant' : 'User'}`)
       lines.push('')
-      let markdown = td.turndown(cleanHtml(msg.html))
+    const htmlForTd = cleanHtml(msg.html).replace(/<(?:br\s*\/?|\/p|\/div|\/section|\/article)>/gi, '$&\n')
+    let markdown = td.turndown(htmlForTd)
       markdown = markdown.replace(/\n{3,}/g, '\n\n').trim()
       lines.push(markdown)
       lines.push('')

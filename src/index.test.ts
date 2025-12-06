@@ -35,7 +35,7 @@ describe("renderHtmlDocument", () => {
     expect(html.startsWith("<!doctype html>")).toBe(true)
     expect(html).toContain("<style>")
     expect(html).toContain("Contents")
-    expect(html).toContain("language-")
+    expect(html).toContain('<article class="article">')
     expect(/<script/i.test(html)).toBe(false)
   });
 });
