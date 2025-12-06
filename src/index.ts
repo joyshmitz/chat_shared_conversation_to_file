@@ -80,6 +80,11 @@ function cleanHtml(html: string): string {
     .replace(/\sdata-end="\d+"/g, '')
 }
 
+function normalizeLineTerminators(markdown: string): string {
+  // Remove Unicode LS (\u2028) and PS (\u2029) which can break editors/linters.
+  return markdown.replace(/[\u2028\u2029]/g, '\n')
+}
+
 async function scrape(url: string): Promise<{ title: string; markdown: string }> {
   const td = buildTurndown()
   let browser: Browser | null = null
@@ -127,7 +132,7 @@ async function scrape(url: string): Promise<{ title: string; markdown: string }>
       lines.push('')
     }
 
-    return { title, markdown: lines.join('\n') }
+    return { title, markdown: normalizeLineTerminators(lines.join('\n')) }
   } finally {
     if (browser) await browser.close()
   }
