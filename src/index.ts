@@ -86,7 +86,6 @@ type PublishHistoryItem = {
 
 type AppConfig = {
   gh?: GhConfig
-  history?: PublishHistoryItem[]
 }
 
 function ensureGhAvailable(autoInstall: boolean): void {
@@ -1355,6 +1354,15 @@ async function scrape(
       timeoutMs,
       'loading the share URL (check that the link is public and reachable)'
     )
+
+    // Fast-fail on common bot-block/CF challenges so we don't hang forever.
+    const bodyText = (await page.textContent('body').catch(() => '')) || ''
+    if (/cloudflare|just a moment|verify you are human|enable javascript|checking your browser/i.test(bodyText)) {
+      throw new AppError(
+        'The share page appears to be blocking automation (bot/challenge page detected).',
+        'Open the link in a regular browser to confirm it loads without a challenge, or try an alternate share.'
+      )
+    }
 
     const selectorSets =
       provider === 'claude'
