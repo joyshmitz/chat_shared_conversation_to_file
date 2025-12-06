@@ -1446,6 +1446,30 @@ async function scrape(
   const td = buildTurndown()
   let browser: Browser | null = null
   let page!: Page
+  const claudeCookie = process.env.CSCTF_CLAUDE_COOKIE?.trim()
+
+  const resolveChromiumExecutable = (): string | undefined => {
+    const candidates =
+      process.platform === 'darwin'
+        ? [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta'
+          ]
+        : process.platform === 'win32'
+        ? [
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+          ]
+        : [
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium'
+          ]
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) return candidate
+    }
+    return undefined
+  }
   const dumpDebug = async (): Promise<string | null> => {
     if (!opts.debug || !page) return null
     try {
@@ -1462,16 +1486,40 @@ async function scrape(
   try {
     browser = await chromium.launch({
       headless: opts.headless,
+      executablePath: resolveChromiumExecutable(),
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-features=IsolateOrigins,site-per-process',
         '--disable-site-isolation-trials'
-      ],
-      ignoreDefaultArgs: ['--enable-automation']
+      ]
     })
     page = await browser.newPage({
       userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      viewport: { width: 1366, height: 768 }
+    })
+    const realHeaders: Record<string, string> = {
+      'sec-ch-ua': '"Not.A/Brand";v="24", "Chromium";v="122", "Google Chrome";v="122"',
+      'sec-ch-ua-platform': '"macOS"',
+      'sec-ch-ua-mobile': '?0',
+      'upgrade-insecure-requests': '1',
+      'accept-language': 'en-US,en;q=0.9',
+      accept:
+        'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
+    }
+    await page.setExtraHTTPHeaders(realHeaders)
+    if (provider === 'claude' && claudeCookie) {
+      await page.setExtraHTTPHeaders({ ...realHeaders, cookie: claudeCookie })
+    }
+    await page.route('**/*', route => {
+      const headers = {
+        ...route.request().headers(),
+        ...realHeaders
+      }
+      if (provider === 'claude' && claudeCookie && /claude\.ai/.test(route.request().url())) {
+        headers.cookie = claudeCookie
+      }
+      route.continue({ headers })
     })
     await page.addInitScript(() => {
       // Basic stealth to reduce bot-detection/CF challenges.
@@ -1496,9 +1544,19 @@ async function scrape(
     // Stage 2: try to reach network-idle, but don't hang forever
     await page.waitForLoadState('networkidle', { timeout: Math.max(3000, timeoutMs / 4) }).catch(() => {})
 
-    // Fast-fail on common bot-block/CF challenges so we don't hang forever.
-    const bodyText = (await page.textContent('body').catch(() => '')) || ''
-    if (/cloudflare|just a moment|verify you are human|enable javascript|checking your browser/i.test(bodyText)) {
+    // Handle bot-block/CF challenges with patience instead of immediate fail.
+    const challengePattern = /cloudflare|just a moment|verify you are human|enable javascript|checking your browser/i
+    let challengeClear = false
+    for (let i = 0; i < 3; i += 1) {
+      const bodyText = (await page.textContent('body').catch(() => '')) || ''
+      if (!challengePattern.test(bodyText)) {
+        challengeClear = true
+        break
+      }
+      await page.waitForTimeout(8000)
+      await page.waitForLoadState('networkidle').catch(() => {})
+    }
+    if (!challengeClear) {
       throw new AppError(
         'The share page appears to be blocking automation (bot/challenge page detected).',
         'Open the link in a regular browser to confirm it loads without a challenge, or try an alternate share.'
@@ -1773,7 +1831,7 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   const provider = detectProvider(url)
-  const effectiveHeadless = headless === false ? false : provider === 'claude' ? false : true
+  const effectiveHeadless = provider === 'claude' ? false : headless !== false
 
   if (forgetGh) {
     forgetGhConfig()
@@ -1812,7 +1870,7 @@ async function main(): Promise<void> {
       (checkUpdates && !skipUpdates ? 1 : 0)
     let idx = 1
 
-    const endLaunch = step(idx++, totalSteps, 'Launching headless Chromium')
+    const endLaunch = step(idx++, totalSteps, effectiveHeadless ? 'Launching headless Chromium' : 'Launching Chromium (headful)')
     const endOpen = step(idx++, totalSteps, 'Opening share link')
     const { title, markdown, retrievedAt } = await scrape(url, timeoutMs, provider, {
       waitForSelector,
