@@ -24,6 +24,34 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_co
 - **Deterministic filenames**: Slugifies the conversation title and auto-increments to avoid clobbering existing files.
 - **Readable progress**: Colorized, step-based console output powered by `chalk`.
 
+## 💡 Why csctm exists
+- Copy/pasting ChatGPT shares often breaks fenced code blocks, loses language hints, and produces messy filenames. csctm fixes that with stable slugs, language-preserving fences, and collision-proof outputs.
+- Exports a static HTML twin (no JS) for easy hosting/archiving, alongside Markdown with normalized whitespace and cleaned citations.
+- Optional GitHub Pages publishing turns a single command into a shareable, indexed microsite.
+
+## 🧭 Design principles
+- Determinism: slugging and collision handling are explicit; writes are temp+rename to avoid partial files.
+- Minimal network surface: only the share URL is fetched unless you opt into update checks or publishing.
+- Safety: headless-only, static HTML (inline CSS/HLJS), no scripts emitted.
+- Clarity: colorized, step-based logging; confirmation gate for publishing (`PROCEED` unless `--yes`).
+
+## 🧠 Processing details (algorithms)
+- Selector strategy: waits for `article [data-message-author-role]` to ensure conversation content is present.
+- Turndown customization: injects fenced code blocks; detects language via `class="language-*"`, strips citation pills and data-start/end attributes.
+- Normalization: converts newlines to `\n`, removes Unicode LS/PS, collapses excessive blank lines.
+- Slugging: lowercase, non-alphanumerics → `_`, trimmed, max 120 chars, Windows reserved-name suffixing, collision suffix `_2`, `_3`, ….
+- Unique-path resolution: if `<name>.md` exists, auto-bump suffixes; HTML shares the base name.
+- HTML rendering: Markdown-it + highlight.js, heading slug de-dupe to build a TOC, inline CSS tuned for light/dark/print, zero JS.
+
+## ⚡ Quickstart
+- macOS/Linux:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_conversation_to_markdown_file/main/install.sh | bash
+  csctm https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70
+  ```
+- Windows: run the installer via Git Bash or WSL (native Windows binary also produced in `dist/`).
+- First run downloads Playwright Chromium; cache is typically `~/.cache/ms-playwright` (Linux/macOS) or `%USERPROFILE%\AppData\Local\ms-playwright` (Windows).
+
 ## 🧭 Usage
 ```bash
 csctm <chatgpt-share-url> \
@@ -41,40 +69,59 @@ What you’ll see:
 - (Optional) Publish to GitHub Pages with `--gh-pages-repo <owner/name>` (defaults to remembered repo or `my_shared_chatgpt_conversations`). Confirm by typing `PROCEED` unless you pass `--yes`. Use `--remember` to persist repo/branch/dir; `--forget-gh-pages` to clear; `--dry-run` to simulate.
 - (Optional) Publish HTML/MD to GitHub Pages via `--gh-pages-repo <repo> [--gh-pages-branch gh-pages] [--gh-pages-dir csctm]` with `GITHUB_TOKEN` set.
 
-## 🚀 Install (curl | bash)
-- Default install to `~/.local/bin`; `DEST=/custom/path` or `--system` for `/usr/local/bin`.
-- Adds PATH hints when `--easy-mode` is used.
-- Windows: use Git Bash or WSL for the installer; native Windows binary is also produced in `dist/`.
+## 📋 Flags at a glance
+| Flag | Default | Purpose | Notes |
+| --- | --- | --- | --- |
+| `--timeout-ms` | `60000` | Navigation + selector waits | Raise to handle slow shares (e.g., `90000`). |
+| `--outfile` | auto slug | Override output path | Base name used for both `.md` and `.html`. |
+| `--no-html` / `--md-only` | html on | Skip HTML twin | `--html-only` writes only HTML. |
+| `--quiet` | verbose | Minimal logging | Errors still print. |
+| `--check-updates` | off | Print latest release tag | No network otherwise. |
+| `--version` | off | Print version and exit | |
+| `--gh-pages-repo` | remembered / `my_shared_chatgpt_conversations` | Target repo for publish | Requires `GITHUB_TOKEN`. |
+| `--gh-pages-branch` | `gh-pages` | Publish branch | Created if missing. |
+| `--gh-pages-dir` | `csctm` | Subdirectory in repo | Keeps exports isolated. |
+| `--remember` / `--forget-gh-pages` | off | Persist/clear GH config | Stored under `~/.config/csctm/config.json`. |
+| `--dry-run` | off | Build index without push | Skips commit/push. |
+| `--yes` / `--no-confirm` | off | Skip `PROCEED` prompt | Use in CI or scripted runs. |
+| `--gh-install` | off | Auto-install `gh` | Tries brew/apt/dnf/yum/winget/choco. |
 
-Examples:
+## 🗂️ Outputs
+- Markdown header: `# ChatGPT Conversation: <title>`, plus `Source` and `Retrieved` lines.
+- Per message: `## User` / `## Assistant`, fenced code with language preserved when present.
+- Filenames: titles are slugified (non-alphanumerics → `_`, trimmed, max 120 chars, Windows reserved names suffixed), collisions auto-suffix `_2`, `_3`, etc.
+- HTML twin: standalone, zero-JS, inline CSS + highlight.js theme, light/dark (prefers-color-scheme), language badges on code blocks, TOC, metadata pills, print-friendly tweaks. Shares the base name with `.md`.
+
+## 🔒 Security & network behavior
+- Network calls: only the ChatGPT share URL, plus optional `--check-updates` and GitHub publish flows.
+- Tokens: only `GITHUB_TOKEN` is read (for publishing). No tokens are stored.
+- Headless-only for speed/determinism; Chromium downloaded once and cached.
+
+## 📈 Performance notes
+- Playwright browsers are cached; first run pays the download, later runs reuse the bundle.
+- Limited retries with small backoff for navigation and selector waits to ride over transient flakiness.
+- Linear processing of the harvested HTML keeps memory modest; no extra browser contexts are opened.
+- Atomic writes prevent partial outputs on interruption.
+
+## 🌐 GitHub Pages quick recipe
 ```bash
-# Standard (latest release binary)
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_conversation_to_markdown_file/main/install.sh | bash
-
-# Force source build
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_conversation_to_markdown_file/main/install.sh | bash -s -- --from-source
-
-# Install to /usr/local/bin
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chatgpt_shared_conversation_to_markdown_file/main/install.sh | bash -s -- --system
+GITHUB_TOKEN=... csctm <share-url> \
+  --gh-pages-repo youruser/my_shared_chatgpt_conversations \
+  --gh-pages-branch gh-pages \
+  --gh-pages-dir csctm \
+  --yes
 ```
+- Without `--yes`, you must type `PROCEED`. Use `--remember` to persist repo/branch/dir; `--forget-gh-pages` to clear. `--dry-run` clones/builds the index but skips commit/push.
 
-## 🗂️ Output shape
-- Title: `# ChatGPT Conversation: <title>`
-- Metadata: `Source: <url>`, `Retrieved: <iso8601>`
-- Per message: `## User` / `## Assistant`
-- Code fences: language preserved when present (```` ```python ... ``` ````)
-- Newlines: normalized to `\n`; Unicode LS/PS removed.
-- HTML twin: standalone, zero-JS HTML with inline CSS and syntax highlighting (highlight.js theme), same base filename as the Markdown.
-  - Light/dark (prefers-color-scheme) theming, language badges on code blocks, softened card layout, TOC, metadata pills, print-friendly tweaks.
-
-## 🔍 How it works (pipeline)
-1. Validate URL and print usage on `-h/--help`.
-2. Launch headless Chromium (`playwright-chromium`) with a desktop UA.
-3. Wait for `article [data-message-author-role]` to ensure content is present.
-4. Extract role + inner HTML for each message.
-5. Turndown + custom code-block rule → Markdown.
-6. Clean citations, normalize whitespace and line terminators.
-7. Slugify title, pick a non-conflicting filename, write to disk.
+## 🌱 Environment variables
+- CLI:
+  - `PLAYWRIGHT_BROWSERS_PATH`: reuse a cached Chromium bundle.
+  - `GITHUB_TOKEN`: required for publishing.
+- Installer:
+  - `VERSION=vX.Y.Z`: pin release tag (otherwise `latest`).
+  - `DEST=/path`: install dir (default `~/.local/bin`; `--system` → `/usr/local/bin`).
+  - `OWNER` / `REPO` / `BINARY`: override download target/name.
+  - `CHECKSUM_URL`: override checksum location; `--verify` requires it.
 
 ## 🛠️ Local build & dev
 ```bash
@@ -95,79 +142,72 @@ bun run build:windows-x64     # dist/csctm-windows-x64.exe
 bun run build:all
 ```
 
-## 🧪 End-to-end smoke (networked)
-Uses the public share link above to verify scrape → Markdown. Requires network + Playwright download.
-```bash
-CSCTM_E2E=1 bun run test:e2e   # builds binary, runs against the shared URL
-```
+## 🔧 Contributing details
+- Stack: Bun + TypeScript (strict), eslint via `bun run lint`.
+- Adding a flag: wire it in `parseArgs`, thread through main, document in the flags table.
+- Tests: prefer unit coverage for helpers (`slugify`, `uniquePath`, HTML render); use `e2e/e2e.test.ts` for scrape-sensitive behavior.
+- Releases: tag `v*` → CI builds artifacts + `sha256.txt`; installer fetches latest unless pinned via `VERSION`.
 
-Checks performed:
-- Binary exits 0
-- Produces `.md` and `.html` files
-- File length and line-count exceed minimums
-- Contains expected header/source URL
-- No stray CR-only line endings or disallowed Unicode separators
-- HTML is static (no `<script>` tags) and contains inline styles.
-
-## 🌐 GitHub Pages publishing (optional)
-- Publish both `.md` and `.html` to a GitHub Pages branch:
+## 🧪 Testing
+- Unit: `bun test` (includes slugify/html render/unique-path checks).
+- E2E (networked, builds binary, hits the shared URL):
   ```bash
-  GITHUB_TOKEN=... csctm <share-url> \
-    --gh-pages-repo youruser/my_shared_chatgpt_conversations \
-    --gh-pages-branch gh-pages \
-    --gh-pages-dir csctm \
-    --gh-install    # optionally auto-install gh if missing (brew/apt/winget/choco)
+  CSCTM_E2E=1 bun run test:e2e
   ```
-- You’ll see a summary and must type `PROCEED` to publish (or pass `--yes`).
-- Use `--remember` to persist repo/branch/dir for next runs; `--forget-gh-pages` to clear.
-- `--dry-run` clones/builds the index but skips commit/push.
-- Index page is auto-regenerated with cards linking to HTML/MD plus added-at timestamps.
-- If you don’t specify a repo, it defaults to `my_shared_chatgpt_conversations` and will infer your GitHub user via `gh`; you can override anytime with `--gh-pages-repo`.
+- What E2E checks: exit code 0, `.md` + `.html` exist, minimum length/lines, correct headers/source URL, balanced fences, sanitized HTML (no `<script>`), normalized newlines.
+
+## 🧭 Examples (outputs)
+- Example input: `https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70`
+- Outputs:
+  - `phage_explorer_design_plan.md` (or `_2`, `_3`, … if collisions)
+  - `phage_explorer_design_plan.html`
+- Properties: fenced code with languages preserved, TOC present, inline CSS for light/dark/print, no scripts, normalized newlines.
 
 ## ⚙️ CI & releases
 - Workflow: lint → typecheck → unit tests → e2e scrape (Ubuntu) → matrix builds (macOS/Linux/Windows) → upload artifacts.
-- Tagged pushes (`v*`) create a GitHub release via `gh release create` and attach built binaries.
-- Playwright browsers are cached between e2e runs to speed up CI.
-- Release bundles now include `sha256.txt` for checksum verification; installer will verify when available (or with `--verify`).
-- README links are checked in CI (chatgpt share link excluded to avoid auth issues).
+- Tagged pushes (`v*`) create a GitHub release with binaries and `sha256.txt` (installer can `--verify`).
+- Playwright browsers are cached between e2e runs; README links are checked (chatgpt share link excluded).
 
-## 📦 Artifacts & install destinations
-- Binaries: `dist/csctm` (macOS/Linux), `dist/csctm.exe` (Windows).
-- Installer default: `~/.local/bin`; override with `DEST` or `--system`.
+## 🔁 Operational notes
+- Playwright cache: `~/.cache/ms-playwright` (Linux/macOS) or `%USERPROFILE%\AppData\Local\ms-playwright` (Windows).
+- Typical runtime: seconds for small/medium conversations after the first download; first run pays Chromium fetch.
+- Idempotent on repeat: slug collisions are handled via suffixes; reruns won’t clobber existing exports.
 
-## 📋 Flags & env (installer)
-- `VERSION=vX.Y.Z` pin a tag; otherwise resolves `latest`.
-- `DEST=/path` install target (default `~/.local/bin`; `--system` → `/usr/local/bin`).
-- `--from-source` force Bun build (requires `bun`, `git`).
-- `--easy-mode` append PATH hints to common shells when possible.
+## 🔍 Comparison
+- Compared to copy/paste or generic webpage → Markdown:
+  - Preserves fenced code blocks with language detection.
+  - Emits deterministic filenames with collision handling.
+  - Ships a static, styled HTML twin (no JS) ready for hosting.
+  - One-command GitHub Pages publishing with manifest/index regeneration.
 
 ## 🧰 Troubleshooting
-- **Playwright download slow?** Pre-populate `PLAYWRIGHT_BROWSERS_PATH` or rerun after first download completes.
-- **Binary not on PATH?** Add `~/.local/bin` (or your `DEST`) to PATH; re-open the shell.
-- **Share layout changed?** The scraper waits for `article [data-message-author-role]`; open an issue with the share URL so selectors can be updated.
-- **Need to force source build?** Use `--from-source` (Bun + git required).
+| Symptom | Fix |
+| --- | --- |
+| Playwright download slow | Set `PLAYWRIGHT_BROWSERS_PATH` to a pre-cached bundle; rerun after first download. |
+| 403/redirect/login page | Ensure the link is a public ChatGPT share; retry with `--timeout-ms 90000`. |
+| “No messages found” | Share layout may have changed; selectors target `article [data-message-author-role]`. Please report the URL. |
+| Binary not on PATH | Add `~/.local/bin` (or `DEST`) to PATH; re-open shell. |
+| Download stalls | Retry with cache; verify network; increase `--timeout-ms`. |
+| Filename conflicts/invalid names | Filenames are slugified/truncated; auto-suffix `_2`, `_3`, … to avoid clobbering. |
+| Partial writes | Files are written temp+rename; re-run if interrupted. |
+| GitHub Pages publish fails | Set `GITHUB_TOKEN` with repo write access; ensure branch exists or pass `--gh-pages-branch`; use `--gh-pages-dir` to isolate exports. |
+| Repo not found (publish) | Provide `--gh-pages-repo owner/name`; ensure `gh` is logged in if relying on defaults. |
 
-## ⚠️ Failure modes & fixes
-- **403/redirect/login page:** Ensure the link is a public ChatGPT share URL; retry with `--timeout-ms 90000`.
-- **No messages found:** Page structure may have changed; selectors target `article [data-message-author-role]`. Please report the share URL.
-- **Download stalls:** Set `PLAYWRIGHT_BROWSERS_PATH` to a cached Chromium bundle to skip downloads (see cache paths in FAQ).
-- **Filename conflicts/invalid names:** Filenames are slugified, truncated to 120 chars, avoid Windows reserved names, and auto-suffix `_2`, `_3`, etc.
-- **Partial writes:** Files are written atomically via temp+rename in the target directory.
-- **Skip HTML twin:** Pass `--no-html` if you only need Markdown.
-- **GitHub Pages publish fails:** Ensure `GITHUB_TOKEN` is set with repo write access; use `--gh-pages-branch` if the branch doesn’t exist yet (it will be created), and `--gh-pages-dir` to isolate exports.
- - **Repo not found:** Provide `--gh-pages-repo owner/name`. If using the default name, ensure `gh` is logged in so we can infer your username or create the repo.
+## ⚠️ Limitations & known behaviors
+- Headless-only; no headful mode today.
+- Assumes public ChatGPT share layout; selectors are `article [data-message-author-role]`.
+- Markdown/HTML exports require the share to remain available at scrape time.
+- Update checks and GH publishing are opt-in; otherwise no outbound calls beyond fetching the share page.
 
 ## ❓ FAQ
-- **Where do the binaries come from?** CI builds macOS/Linux/Windows artifacts on tagged releases; the installer fetches from the latest tag (`releases/latest`) unless you pin `VERSION=vX.Y.Z`.
+- **Where do the binaries come from?** CI builds macOS/Linux/Windows artifacts on tagged releases; the installer fetches from the latest tag unless you pin `VERSION=vX.Y.Z`.
 - **How are filenames generated?** Conversation titles are lowercased, non-alphanumerics → `_`, trimmed of leading/trailing `_`; collisions append `_2`, `_3`, ….
-- **Where does Playwright cache browsers?** Default: `~/.cache/ms-playwright` (Linux/macOS) or `%USERPROFILE%\\AppData\\Local\\ms-playwright` (Windows). CI caches this directory between runs.
-- **Why does first run take longer?** Playwright downloads Chromium once. Subsequent runs reuse the cached browser bundle.
+- **Where does Playwright cache browsers?** Default: `~/.cache/ms-playwright` (Linux/macOS) or `%USERPROFILE%\AppData\Local\ms-playwright` (Windows). CI caches this directory between runs.
+- **Why does first run take longer?** Playwright downloads Chromium once. Subsequent runs reuse the cached bundle.
 - **Can I control timeouts?** Yes: `--timeout-ms` sets both navigation and selector waits (default 60000ms).
 - **Can I override the output path?** Yes: `--outfile /path/to/output.md` bypasses slug-based naming.
 - **Can I reduce console output?** `--quiet` minimizes progress logs; errors still print.
-- **Can I check for updates?** Add `--check-updates` to print the latest GitHub release tag (no network calls by default).
 - **Can I verify downloads?** The installer fetches adjacent `.sha256` files when present; use `--verify` to require a checksum.
-- **Can I run headful?** Not currently; the tool is headless-only for speed and determinism.
 - **Can I change the user agent or selectors?** Edit `src/index.ts` (`chromium.launch` options and `page.waitForSelector` target) and rebuild.
 - **How do I verify installs?** Run `csctm --help` and invoke the bundled E2E: `CSCTM_E2E=1 bun run test:e2e` (network + browser download required).
 - **Which Markdown rules are customized?** A turndown rule injects fenced code blocks with detected language from `class="language-..."`; citation pills and data-start/end attributes are stripped.

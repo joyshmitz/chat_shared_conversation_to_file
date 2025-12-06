@@ -1034,9 +1034,10 @@ async function main(): Promise<void> {
 
   try {
     const totalSteps =
-      5 +
+      4 + // launch, open, convert, final "all done"
       (produceMd ? 1 : 0) +
       (produceHtml ? 1 : 0) +
+      (quiet ? 0 : 1) + // location print
       (shouldPublish ? 1 : 0) +
       (checkUpdates ? 1 : 0)
     let idx = 1
@@ -1047,32 +1048,35 @@ async function main(): Promise<void> {
 
     step(idx++, totalSteps, chalk.cyan('Converting to Markdown'))
     const name = slugify(title.replace(/^ChatGPT\s*-?\s*/i, ''))
-    const defaultOutfile = uniquePath(path.join(process.cwd(), `${name}.md`))
-    const baseOutfile = outfile ? path.resolve(outfile) : defaultOutfile
-    const targetOutfile = produceMd ? baseOutfile : baseOutfile
-    const htmlOutfile = path.join(path.dirname(baseOutfile), `${path.parse(baseOutfile).name}.html`)
+    const resolvedOutfile = outfile ? path.resolve(outfile) : path.join(process.cwd(), `${name}.md`)
+    const parsedOutfile = path.parse(resolvedOutfile)
+    const outfileStem = path.join(parsedOutfile.dir, parsedOutfile.name || name)
+    const mdOutfile = `${outfileStem}.md`
+    const htmlOutfile = `${outfileStem}.html`
 
     const writtenFiles: { path: string; kind: 'md' | 'html' }[] = []
     if (produceMd) {
+      const targetMd = fs.existsSync(mdOutfile) ? uniquePath(mdOutfile) : mdOutfile
       step(idx++, totalSteps, chalk.cyan('Writing Markdown'))
-      writeAtomic(targetOutfile, markdown)
-      writtenFiles.push({ path: targetOutfile, kind: 'md' })
+      writeAtomic(targetMd, markdown)
+      writtenFiles.push({ path: targetMd, kind: 'md' })
     }
 
     if (produceHtml) {
+      const htmlTarget = fs.existsSync(htmlOutfile) ? uniquePath(htmlOutfile) : htmlOutfile
       step(idx++, totalSteps, chalk.cyan('Rendering HTML'))
       const html = renderHtmlDocument(markdown, title, url, retrievedAt)
-      const htmlTarget = fs.existsSync(htmlOutfile) ? uniquePath(htmlOutfile) : htmlOutfile
       writeAtomic(htmlTarget, html)
       writtenFiles.push({ path: htmlTarget, kind: 'html' })
     }
 
-    done(`Saved ${path.basename(targetOutfile)}`)
+    const savedNames = writtenFiles.map(f => path.basename(f.path)).join(', ')
+    done(`Saved ${savedNames}`)
     if (!quiet) {
       step(idx++, totalSteps, chalk.cyan('Location'))
-      if (produceMd) console.log(`   ${chalk.green(targetOutfile)}`)
-      const htmlPath = writtenFiles.find(f => f.kind === 'html')?.path
-      if (produceHtml && htmlPath) console.log(`   ${chalk.green(htmlPath)}`)
+      writtenFiles.forEach(f => {
+        console.log(`   ${chalk.green(f.path)}`)
+      })
     }
 
     if (shouldPublish) {
