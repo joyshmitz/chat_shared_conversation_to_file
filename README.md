@@ -95,7 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chat_shared_conve
 ## ⚡ Quickstart
 - macOS/Linux:
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/chat_shared_conversation_to_file/main/install.sh | bash
+  curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/chat_shared_conversation_to_file/main/install.sh?ts=$(date +%s)" | bash
   csctf https://chatgpt.com/share/69343092-91ac-800b-996c-7552461b9b70
   ```
 - Windows: run the installer via Git Bash or WSL (native Windows binary also produced in `dist/`).
