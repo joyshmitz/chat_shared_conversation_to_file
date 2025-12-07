@@ -2019,7 +2019,7 @@ async function scrape(
 
     // WebGL fingerprint protection
     const getParameterProxyHandler = {
-      apply(target: Function, thisArg: WebGLRenderingContext, args: unknown[]) {
+      apply(target: (pname: number) => unknown, thisArg: WebGLRenderingContext, args: unknown[]) {
         const param = args[0]
         // Randomize some WebGL parameters
         if (param === 37445) return 'Intel Inc.' // UNMASKED_VENDOR_WEBGL
