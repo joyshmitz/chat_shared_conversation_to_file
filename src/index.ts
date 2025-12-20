@@ -610,7 +610,7 @@ const escapeHtml = (value: string): string =>
     .replace(/\//g, '&#47;')
     .replace(/\r?\n/g, '<br>')
 
-const stripProviderPrefix = (title: string): string => title.replace(/^(ChatGPT|Gemini|Grok)\s*-?\s*/i, '')
+const stripProviderPrefix = (title: string): string => title.replace(/^(ChatGPT|Gemini|Grok|Claude)\s*-?\s*/i, '').replace(/\s*\|\s*Claude$/i, '')
 
 export function renderHtmlDocument(markdown: string, title: string, source: string, retrieved: string): string {
   const counts = new Map<string, number>()
@@ -2837,11 +2837,15 @@ async function scrape(
       }
 
       // Convert to markdown using turndown
+      // Use same format as Playwright mode for consistency
+      const retrievedAt = new Date().toISOString()
+      const titleWithoutPrefix = stripProviderPrefix(pageTitle)
+      const headingPrefix = provider === 'gemini' ? 'Gemini' : provider === 'grok' ? 'Grok' : provider === 'claude' ? 'Claude' : 'ChatGPT'
       const lines: string[] = [
-        `# Conversation: ${pageTitle}`,
+        `# ${headingPrefix} Conversation: ${titleWithoutPrefix}`,
         '',
-        `> Source: ${url}`,
-        `> Retrieved: ${new Date().toLocaleString()}`,
+        `Source: ${url}`,
+        `Retrieved: ${retrievedAt}`,
         ''
       ]
 
@@ -2855,7 +2859,7 @@ async function scrape(
       return {
         title: pageTitle.replace(/\s*[-|].*$/, '').trim() || `${provider.charAt(0).toUpperCase() + provider.slice(1)} Conversation`,
         markdown: normalizeLineTerminators(lines.join('\n')),
-        retrievedAt: new Date().toISOString()
+        retrievedAt
       }
     } else {
       // Standard Playwright mode with CDP fallback on any blocking error
@@ -3238,8 +3242,8 @@ async function scrape(
     }
 
     const lines: string[] = []
-    const titleWithoutPrefix = title.replace(/^(ChatGPT|Gemini|Grok|Claude)\s*-?\s*/i, '').replace(/\s*\|\s*Claude$/i, '')
-    const headingPrefix = provider === 'gemini' ? 'Gemini' : provider === 'grok' ? 'Grok' : 'ChatGPT'
+    const titleWithoutPrefix = stripProviderPrefix(title)
+    const headingPrefix = provider === 'gemini' ? 'Gemini' : provider === 'grok' ? 'Grok' : provider === 'claude' ? 'Claude' : 'ChatGPT'
     lines.push(`# ${headingPrefix} Conversation: ${titleWithoutPrefix}`)
     lines.push('')
     const retrievedAt = new Date().toISOString()
@@ -3369,7 +3373,8 @@ async function main(): Promise<void> {
     ghPagesBranch,
     ghPagesDir,
     useChromeProfile,
-    stealthMode
+    stealthMode,
+    cdpEndpoint
   } = opts
 
   const step = STEP(quiet, verbose)
@@ -3391,7 +3396,7 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   const sharePattern =
-    /^https?:\/\/(chatgpt\.com|share\.chatgpt\.com|chat\.openai\.com|gemini\.google\.com|grok\.com|claude\.ai)\/share\//i
+    /^https?:\/\/(chatgpt\.com|share\.chatgpt\.com|chat\.openai\.com|gemini\.google\.com|grok\.com|grok\.x\.ai|claude\.ai)\/share\//i
   if (!sharePattern.test(url)) {
     fail(
       'The URL should be a public ChatGPT, Gemini, Grok, or Claude share link (e.g., https://chatgpt.com/share/<id>, https://gemini.google.com/share/<id>, https://grok.com/share/<id>, or https://claude.ai/share/<id>).'
@@ -3445,7 +3450,9 @@ async function main(): Promise<void> {
       debug,
       headless: effectiveHeadless,
       useChromeProfile,
-      stealthMode
+      stealthMode,
+      cdpEndpoint,
+      quiet
     })
     endLaunch()
     endOpen()
@@ -3453,7 +3460,7 @@ async function main(): Promise<void> {
     const endConvert = step(idx++, totalSteps, 'Converting to Markdown')
     const datePrefix = new Date().toISOString().slice(0, 10)
     const baseTitle = titleOverride || title
-    const name = `${datePrefix}-${provider}-${slugify(baseTitle.replace(/^(ChatGPT|Gemini|Grok)\s*-?\s*/i, ''))}`
+    const name = `${datePrefix}-${provider}-${slugify(stripProviderPrefix(baseTitle))}`
     const resolvedOutfile = outputDir
       ? path.resolve(outputDir)
       : outfile
