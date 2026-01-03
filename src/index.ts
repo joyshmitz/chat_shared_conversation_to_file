@@ -2689,7 +2689,15 @@ async function scrape(
           // ChatGPT: messages have data-message-author-role attribute
           const msgs = document.querySelectorAll('[data-message-author-role]')
           msgs.forEach(el => {
-            const role = el.getAttribute('data-message-author-role') || 'unknown'
+            let role = el.getAttribute('data-message-author-role') || ''
+            // GPT-5.2+ fallback: detect from "You said:" / "ChatGPT said:" text headers
+            // Anchor to start to avoid false positives from "I think you said..." in message content
+            if (!role || role === 'unknown') {
+              const textStart = (el.textContent || '').slice(0, 100).toLowerCase()
+              if (/^(?:#{1,6}\s*)?chatgpt\s+said/.test(textStart)) role = 'assistant'
+              else if (/^(?:#{1,6}\s*)?you\s+said/.test(textStart)) role = 'user'
+              else role = 'unknown'
+            }
             results.push({ role, content: el.innerHTML })
           })
         } else if (prov === 'claude') {
@@ -2732,6 +2740,17 @@ async function scrape(
 
       // Get page title
       const pageTitle = await puppeteerPage.title() || `${provider.charAt(0).toUpperCase() + provider.slice(1)} Conversation`
+
+      // Apply alternating role fallback for any remaining unknown messages (ChatGPT GPT-5.2+)
+      if (provider === 'chatgpt' || provider === 'grok' || provider === 'gemini') {
+        let unknownIdx = 0
+        for (const msg of messages) {
+          if (msg.role === 'unknown') {
+            msg.role = unknownIdx % 2 === 0 ? 'user' : 'assistant'
+            unknownIdx++
+          }
+        }
+      }
 
       // Close puppeteer browser
       await puppeteerBrowser.disconnect()
@@ -2852,7 +2871,10 @@ async function scrape(
       for (const msg of messages) {
         const roleLabel = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'Message'
         lines.push(`## ${roleLabel}`, '')
-        lines.push(td.turndown(msg.content))
+        let markdown = td.turndown(msg.content)
+        // Strip GPT-5.2 "You said:" / "ChatGPT said:" header artifacts (role is captured in ## heading)
+        markdown = markdown.replace(/^#{3,6}\s*(You said|ChatGPT said):?\s*$/gim, '').replace(/\n{3,}/g, '\n\n').trim()
+        lines.push(markdown)
         lines.push('')
       }
 
@@ -3202,6 +3224,11 @@ async function scrape(
             const source = `${attrRole} ${testId} ${className}`
             if (/assistant|bot|system|model|gemini|grok/.test(source)) return 'assistant'
             if (/user|human|you/.test(source)) return 'user'
+            // GPT-5.2+ uses "You said:" / "ChatGPT said:" headers without role attributes
+            // Anchor to start to avoid false positives from "I think you said..." in message content
+            const textStart = text.slice(0, 100).toLowerCase()
+            if (/^(?:#{1,6}\s*)?chatgpt\s+said/.test(textStart)) return 'assistant'
+            if (/^(?:#{1,6}\s*)?you\s+said/.test(textStart)) return 'user'
             return 'unknown'
           }
           const detected = (attrRole || inferRole()).toLowerCase()
@@ -3222,7 +3249,8 @@ async function scrape(
     }, selectorGroups)) as ScrapedMessage[]
 
     // Note: Claude uses CDP mode and returns early, so it's never in this code path
-    if (provider === 'grok' || provider === 'gemini') {
+    // GPT-5.2+ may have some messages without role attributes; apply alternating fallback
+    if (provider === 'grok' || provider === 'gemini' || provider === 'chatgpt') {
       let unknownIdx = 0
       messages = messages.map(m => {
         if (m.role !== 'unknown') return m
@@ -3272,6 +3300,8 @@ async function scrape(
         .filter(line => line.trim() !== 'text')
         .join('\n')
       markdown = markdown.replace(/\n{3,}/g, '\n\n').trim()
+      // Strip GPT-5.2 "You said:" / "ChatGPT said:" header artifacts (role is captured in ## heading)
+      markdown = markdown.replace(/^#{3,6}\s*(You said|ChatGPT said):?\s*$/gim, '').replace(/\n{3,}/g, '\n\n').trim()
       lines.push(markdown)
       lines.push('')
     }
