@@ -348,26 +348,28 @@ Comparison:
 
 ## Beads Workflow Integration
 
+**Note:** `br` (beads_rust) is non-invasive and never executes git commands. You must run git commands manually after `br sync --flush-only`.
+
 When starting a beads-tracked task:
 
 1. **Pick ready work** (Beads)
-   - `bd ready --json` → choose one item (highest priority, no blockers)
+   - `br ready --json` → choose one item (highest priority, no blockers)
 2. **Reserve edit surface** (Mail)
-   - `file_reservation_paths(project_key, agent_name, ["src/**"], ttl_seconds=3600, exclusive=true, reason="bd-123")`
+   - `file_reservation_paths(project_key, agent_name, ["src/**"], ttl_seconds=3600, exclusive=true, reason="br-123")`
 3. **Announce start** (Mail)
-   - `send_message(..., thread_id="bd-123", subject="[bd-123] Start: <short title>", ack_required=true)`
+   - `send_message(..., thread_id="br-123", subject="[br-123] Start: <short title>", ack_required=true)`
 4. **Work and update**
    - Reply in-thread with progress and attach artifacts/images; keep the discussion in one thread per issue id
 5. **Complete and release**
-   - `bd close bd-123 --reason "Completed"` (Beads is status authority)
+   - `br close br-123 --reason "Completed"` (Beads is status authority)
    - `release_file_reservations(project_key, agent_name, paths=["src/**"])`
-   - Final Mail reply: `[bd-123] Completed` with summary and links
+   - Final Mail reply: `[br-123] Completed` with summary and links
 
 Mapping cheat-sheet:
-- **Mail `thread_id`** ↔ `bd-###`
-- **Mail subject**: `[bd-###] ...`
-- **File reservation `reason`**: `bd-###`
-- **Commit messages (optional)**: include `bd-###` for traceability
+- **Mail `thread_id`** ↔ `br-###`
+- **Mail subject**: `[br-###] ...`
+- **File reservation `reason`**: `br-###`
+- **Commit messages (optional)**: include `br-###` for traceability
 
 ---
 
@@ -383,7 +385,9 @@ Mapping cheat-sheet:
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
+   br sync --flush-only
+   git add .beads/
+   git commit -m "sync beads" --allow-empty
    git push
    git status  # MUST show "up to date with origin"
    ```
